@@ -11,15 +11,17 @@
 
 %% API
 -export([start_instances/0]).
+-export([stop/0]).
 
 start_instances() ->
+    eredis_cluster:start(),
     Instances =
         [
             {app_config,
                 % init_nodes => servers
                 % support cluster
                 [
-                    {servers, [
+                    {init_nodes, [
                         {"redis-mqtt-config", 6379}
                     ]
                     },
@@ -35,7 +37,7 @@ start_instances() ->
                 % init_nodes => servers
                 % support cluster
                 [
-                    {servers, [
+                    {init_nodes, [
                         {"redis-mqtt-session", 6379}
                     ]
                     },
@@ -51,3 +53,8 @@ start_instances() ->
 
 start(InstanceName, Options) ->
     {ok, _}= eredis_cluster:start_instance(InstanceName, Options).
+
+stop() ->
+    eredis_cluster_sup:stop_cluster_monitor_child(app_config),
+    eredis_cluster_sup:stop_cluster_monitor_child(app_session).
+

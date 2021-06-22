@@ -18,7 +18,7 @@
 -export([q/2, qp/2, qw/2, qk/3, qa/2, qmn/2, transaction/2, transaction/3]).
 
 % Specific redis command implementation
--export([flushdb/1]).
+%%-export([flushdb/1]).
 
  % Helper functions
 -export([update_key/3]).
@@ -378,15 +378,15 @@ qw(InstanceName, Command) ->
 %% @doc Perform flushdb command on each node of the redis cluster
 %% @end
 %% =============================================================================
--spec flushdb(instance_name()) -> ok | {error, Reason::bitstring()}.
-flushdb(InstanceName) ->
-    Result = qa(InstanceName, ["FLUSHDB"]),
-    case proplists:lookup(error,Result) of
-        none ->
-            ok;
-        Error ->
-            Error
-    end.
+%%-spec flushdb(instance_name()) -> ok | {error, Reason::bitstring()}.
+%%flushdb(InstanceName) ->
+%%    Result = qa(InstanceName, ["FLUSHDB"]),
+%%    case proplists:lookup(error,Result) of
+%%        none ->
+%%            ok;
+%%        Error ->
+%%            Error
+%%    end.
 
 %% =============================================================================
 %% @doc Return the hash slot from the key

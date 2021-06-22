@@ -12,38 +12,6 @@
 -export([init/1]).
 
 -include("eredis_cluster.hrl").
-%%
-%%-spec create(Host::string(), Port::integer()) ->
-%%    {ok, PoolName::atom()} | {error, PoolName::atom()}.
-%%create(Host, Port) ->
-%%	PoolName = get_name(Host, Port),
-%%
-%%    case whereis(PoolName) of
-%%        undefined ->
-%%            DataBase = application:get_env(eredis_cluster, database, 0),
-%%            Password = application:get_env(eredis_cluster, password, ""),
-%%            WorkerArgs = [{host, Host},
-%%                          {port, Port},
-%%                          {database, DataBase},
-%%                          {password, Password}
-%%                         ],
-%%
-%%        	Size = application:get_env(eredis_cluster, pool_size, 10),
-%%        	MaxOverflow = application:get_env(eredis_cluster, pool_max_overflow, 0),
-%%
-%%            PoolArgs = [{name, {local, PoolName}},
-%%                        {worker_module, eredis_cluster_pool_worker},
-%%                        {size, Size},
-%%                        {max_overflow, MaxOverflow}],
-%%
-%%            ChildSpec = poolboy:child_spec(PoolName, PoolArgs, WorkerArgs),
-%%
-%%            {Result, _} = supervisor:start_child(?MODULE,ChildSpec),
-%%        	{Result, PoolName};
-%%        _ ->
-%%            {ok, PoolName}
-%%    end.
-
 
 create(Host, Port, DataBase, Password, Size, MaxOverflow) ->
     create(Host, Port, DataBase, Password, Size, MaxOverflow, []).

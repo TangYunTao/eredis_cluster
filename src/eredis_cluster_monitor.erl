@@ -221,7 +221,7 @@ safe_eredis_start_link(#node{address = Host, port = Port},
 %%              end,
 %%    Payload = eredis:start_link(Host, Port, DataBase, Password, no_reconnect, 5000, Options),
     Payload = eredis:start_link(Host, Port, DataBase, Password, no_reconnect, 5000),
-    process_flag(trap_exit, true),
+%%    process_flag(trap_exit, true),
     Payload.
 
 -spec create_slots_cache(InstanceName::atom(), [#slots_map{}]) -> [integer()].
@@ -256,7 +256,7 @@ connect_(InstanceName, Opts) ->
     State = #state{
         slots = undefined,
         slots_maps = {},
-        init_nodes = [#node{address= A, port = P} || {A,P} <- proplists:get_value(servers, Opts, [])],
+        init_nodes = [#node{address= A, port = P} || {A,P} <- proplists:get_value(init_nodes, Opts, [])],
         version = 0,
         instance_name = InstanceName,
         database = proplists:get_value(database, Opts, 0),
@@ -270,9 +270,6 @@ connect_(InstanceName, Opts) ->
 
 init([{InstanceName, Opts}]) ->
     process_flag(trap_exit, true),
-%%    ets:new(?INSTANCES, [protected, set, named_table, {read_concurrency, true}]),
-%%    ets:new(?SLOTS, [protected, set, named_table, {read_concurrency, true}]),
-%%    InitNodes = application:get_env(eredis_cluster, init_nodes, []),
     {ok, connect_(InstanceName, Opts)}.
 
 handle_call({reload_slots_map,Version}, _From, #state{version=Version} = State) ->
@@ -290,7 +287,9 @@ handle_cast(_Msg, State) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
-terminate(_Reason, _State) ->
+terminate(_Reason, #state{instance_name = InstanceName}) ->
+    ets:delete(?INSTANCES, InstanceName),
+    ets:match_delete(?SLOTS, {{InstanceName, '_'}, '_'}),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
