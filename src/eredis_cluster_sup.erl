@@ -65,7 +65,7 @@ start_cluster_monitor_child(InstanceName, Params) ->
         start => {eredis_cluster_monitor, start_link, [InstanceName, Params]},
         restart => permanent,
         shutdown => 5000,
-        type => supervisor,
+        type => worker,
         modules => [eredis_cluster_monitor]},
     supervisor:start_child(?MODULE, ChildSpec).
 
