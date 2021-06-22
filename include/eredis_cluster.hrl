@@ -1,7 +1,9 @@
 -type anystring() :: string() | bitstring().
 
+
 -type redis_simple_command() :: [anystring()].
 -type redis_pipeline_command() :: [redis_simple_command()].
+-type instance_name() :: atom().
 -type redis_command() :: redis_simple_command() | redis_pipeline_command().
 
 -type redis_error_result() :: Reason::bitstring() | no_connection
@@ -27,10 +29,14 @@
     node :: #node{}
 }).
 
+-define(INSTANCES, eredis_cluster_monitor_instances).
+-define(SLOTS, eredis_cluster_monitor_slots).
+
 -define(REDIS_CLUSTER_HASH_SLOTS, 16384).
 -define(OL_TRANSACTION_TTL, 16).
 -define(REDIS_CLUSTER_REQUEST_TTL, 16).
 -define(REDIS_RETRY_DELAY, 100).
+-define(RECONNECT_TIME, 100).
 
 -define(CRCDEF, <<16#00,16#00,16#10,16#21,16#20,16#42,16#30,16#63,
 16#40,16#84,16#50,16#a5,16#60,16#c6,16#70,16#e7,

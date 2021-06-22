@@ -1,36 +1,34 @@
 -module(eredis_cluster).
 -behaviour(application).
 
-% Application.
+-export([start_instance/2, stop_instance/1]).
+
+%% Application
 -export([start/2]).
 -export([stop/1]).
 
 % API.
--export([start/0, stop/0, connect/1]). % Application Management.
+-export([start/0]). % Application Management.
+-export([stop/0]).
+
+% API.
+-export([connect/2]). % Application Management.
 
 % Generic redis call
--export([q/1, qp/1, qw/2, qk/2, qa/1, qmn/1, transaction/1, transaction/2]).
+-export([q/2, qp/2, qw/2, qk/3, qa/2, qmn/2, transaction/2, transaction/3]).
 
 % Specific redis command implementation
--export([flushdb/0]).
+-export([flushdb/1]).
 
  % Helper functions
--export([update_key/2]).
--export([update_hash_field/3]).
--export([optimistic_locking_transaction/3]).
--export([eval/4]).
+-export([update_key/3]).
+-export([update_hash_field/4]).
+-export([optimistic_locking_transaction/4]).
+-export([eval/5]).
 
 -include("eredis_cluster.hrl").
 
--spec start(StartType::application:start_type(), StartArgs::term()) ->
-    {ok, pid()}.
-start(_Type, _Args) ->
-    eredis_cluster_sup:start_link().
-
--spec stop(State::term()) -> ok.
-stop(_State) ->
-    ok.
-
+%% start | stop pool
 -spec start() -> ok | {error, Reason::term()}.
 start() ->
     application:start(?MODULE).
@@ -39,23 +37,44 @@ start() ->
 stop() ->
     application:stop(?MODULE).
 
+start(_Type, _Args) ->
+    eredis_cluster_sup:start_link().
+
+stop(_State) ->
+    application:stop(?MODULE).
+
+%% TODO
+%%-spec start_instance(StartType::application:start_type(), StartArgs::term()) ->
+%%    {ok, pid()}.
+
+%%  start | stop instance server
+-spec start_instance(InstanceName::atom(), StartArgs::term()) ->
+    {ok, pid()}.
+start_instance(InstanceName, Opts) ->
+    eredis_cluster_sup:start_cluster_monitor_child(InstanceName, Opts).
+
+-spec stop_instance(InstanceName::atom()) -> ok.
+stop_instance(InstanceName) ->
+    eredis_cluster_sup:stop_cluster_monitor_child(InstanceName).
+
+
 %% =============================================================================
 %% @doc Connect to a set of init node, useful if the cluster configuration is
 %% not known at startup
 %% @end
 %% =============================================================================
--spec connect(InitServers::term()) -> Result::term().
-connect(InitServers) ->
-    eredis_cluster_monitor:connect(InitServers).
+-spec connect(instance_name(), InitServers::term()) -> Result::term().
+connect(InstanceName, InitServers) ->
+    eredis_cluster_monitor:connect(InstanceName, InitServers).
 
 %% =============================================================================
 %% @doc Wrapper function to execute a pipeline command as a transaction Command
 %% (it will add MULTI and EXEC command)
 %% @end
 %% =============================================================================
--spec transaction(redis_pipeline_command()) -> redis_transaction_result().
-transaction(Commands) ->
-    Result = q([["multi"]| Commands] ++ [["exec"]]),
+-spec transaction(instance_name(), redis_pipeline_command()) -> redis_transaction_result().
+transaction(InstanceName, Commands) when is_atom(InstanceName) ->
+    Result = q(InstanceName, [["multi"]| Commands] ++ [["exec"]]),
     lists:last(Result).
 
 %% =============================================================================
@@ -65,19 +84,19 @@ transaction(Commands) ->
 %% containing.
 %% @end
 %% =============================================================================
--spec transaction(fun((Worker::pid()) -> redis_result()), anystring()) -> any().
-transaction(Transaction, PoolKey) ->
+-spec transaction(instance_name(),fun((Worker::pid()) -> redis_result()), anystring()) -> any().
+transaction(InstanceName, Transaction, PoolKey) ->
     Slot = get_key_slot(PoolKey),
-    transaction(Transaction, Slot, undefined, 0).
+    transaction(InstanceName, Transaction, Slot, undefined, 0).
 
-transaction(Transaction, Slot, undefined, _) ->
-    query(Transaction, Slot, 0);
-transaction(Transaction, Slot, ExpectedValue, Counter) ->
-    case query(Transaction, Slot, 0) of
+transaction(InstanceName, Transaction, Slot, undefined, _) ->
+    query(InstanceName, Transaction, Slot, 0);
+transaction(InstanceName, Transaction, Slot, ExpectedValue, Counter) ->
+    case query(InstanceName, Transaction, Slot, 0) of
         ExpectedValue ->
-            transaction(Transaction, Slot, ExpectedValue, Counter - 1);
+            transaction(InstanceName, Transaction, Slot, ExpectedValue, Counter - 1);
         {ExpectedValue, _} ->
-            transaction(Transaction, Slot, ExpectedValue, Counter - 1);
+            transaction(InstanceName, Transaction, Slot, ExpectedValue, Counter - 1);
         Payload ->
             Payload
     end.
@@ -86,31 +105,31 @@ transaction(Transaction, Slot, ExpectedValue, Counter) ->
 %% @doc Multi node query
 %% @end
 %% =============================================================================
--spec qmn(redis_pipeline_command()) -> redis_pipeline_result().
-qmn(Commands) -> qmn(Commands, 0).
+-spec qmn(instance_name(), redis_pipeline_command()) -> redis_pipeline_result().
+qmn(InstanceName, Commands) -> qmn(InstanceName, Commands, 0).
 
-qmn(_, ?REDIS_CLUSTER_REQUEST_TTL) -> 
+qmn(_, _, ?REDIS_CLUSTER_REQUEST_TTL) ->
     {error, no_connection};
-qmn(Commands, Counter) ->
+qmn(InstanceName, Commands, Counter) ->
     %% Throttle retries
     throttle_retries(Counter),
 
-    {CommandsByPools, MappingInfo, Version} = split_by_pools(Commands),
-    case qmn2(CommandsByPools, MappingInfo, [], Version) of
-        retry -> qmn(Commands, Counter + 1);
+    {CommandsByPools, MappingInfo, Version} = split_by_pools(InstanceName, Commands),
+    case qmn2(InstanceName, CommandsByPools, MappingInfo, [], Version) of
+        retry -> qmn(InstanceName, Commands, Counter + 1);
         Res -> Res
     end.
 
-qmn2([{Pool, PoolCommands} | T1], [{Pool, Mapping} | T2], Acc, Version) ->
+qmn2(InstanceName, [{Pool, PoolCommands} | T1], [{Pool, Mapping} | T2], Acc, Version) ->
     Transaction = fun(Worker) -> qw(Worker, PoolCommands) end,
     Result = eredis_cluster_pool:transaction(Pool, Transaction),
-    case handle_transaction_result(Result, Version, check_pipeline_result) of
+    case handle_transaction_result(InstanceName, Result, Version, check_pipeline_result) of
         retry -> retry;
-        Res -> 
+        Res ->
             MappedRes = lists:zip(Mapping,Res),
-            qmn2(T1, T2, MappedRes ++ Acc, Version)
+            qmn2(InstanceName, T1, T2, MappedRes ++ Acc, Version)
     end;
-qmn2([], [], Acc, _) ->
+qmn2(_, [], [], Acc, _) ->
     SortedAcc =
         lists:sort(
             fun({Index1, _},{Index2, _}) ->
@@ -118,8 +137,8 @@ qmn2([], [], Acc, _) ->
             end, Acc),
     [Res || {_,Res} <- SortedAcc].
 
-split_by_pools(Commands) ->
-    State = eredis_cluster_monitor:get_state(),
+split_by_pools(InstanceName, Commands) ->
+    State = eredis_cluster_monitor:get_state(InstanceName),
     split_by_pools(Commands, 1, [], [], State).
 
 split_by_pools([Command | T], Index, CmdAcc, MapAcc, State) ->
@@ -148,53 +167,53 @@ split_by_pools([], _Index, CmdAcc, MapAcc, State) ->
 %% @doc Wrapper function for command using pipelined commands
 %% @end
 %% =============================================================================
--spec qp(redis_pipeline_command()) -> redis_pipeline_result().
-qp(Commands) -> q(Commands).
+-spec qp(instance_name(), redis_pipeline_command()) -> redis_pipeline_result().
+qp(InstanceName, Commands) -> q(InstanceName, Commands).
 
 %% =============================================================================
 %% @doc This function execute simple or pipelined command on a single redis node
 %% the node will be automatically found according to the key used in the command
 %% @end
 %% =============================================================================
--spec q(redis_command()) -> redis_result().
-q(Command) ->
-    query(Command).
+-spec q(instance_name(), redis_command()) -> redis_result().
+q(InstanceName, Command) ->
+    query(InstanceName, Command).
 
--spec qk(redis_command(), bitstring()) -> redis_result().
-qk(Command, PoolKey) ->
-    query(Command, PoolKey).
+-spec qk(instance_name(), redis_command(), bitstring()) -> redis_result().
+qk(InstanceName, Command, PoolKey) ->
+    query(InstanceName, Command, PoolKey).
 
-query(Command) ->
+query(InstanceName, Command) ->
     PoolKey = get_key_from_command(Command),
-    query(Command, PoolKey).
+    query(InstanceName, Command, PoolKey).
 
-query(_, undefined) ->
+query(_, _, undefined) ->
     {error, invalid_cluster_command};
-query(Command, PoolKey) ->
+query(InstanceName, Command, PoolKey) ->
     Slot = get_key_slot(PoolKey),
     Transaction = fun(Worker) -> qw(Worker, Command) end,
-    query(Transaction, Slot, 0).
+    query(InstanceName, Transaction, Slot, 0).
 
-query(_, _, ?REDIS_CLUSTER_REQUEST_TTL) ->
+query(_, _, _, ?REDIS_CLUSTER_REQUEST_TTL) ->
     {error, no_connection};
-query(Transaction, Slot, Counter) ->
+query(InstanceName, Transaction, Slot, Counter) ->
     %% Throttle retries
     throttle_retries(Counter),
 
-    {Pool, Version} = eredis_cluster_monitor:get_pool_by_slot(Slot),
+    {Pool, Version} = eredis_cluster_monitor:get_pool_by_slot(InstanceName, Slot),
 
     Result = eredis_cluster_pool:transaction(Pool, Transaction),
-    case handle_transaction_result(Result, Version) of 
-        retry -> query(Transaction, Slot, Counter + 1);
+    case handle_transaction_result(InstanceName, Result, Version) of
+        retry -> query(InstanceName, Transaction, Slot, Counter + 1);
         Result -> Result
     end.
 
-handle_transaction_result(Result, Version) ->
-    case Result of 
+handle_transaction_result(InstanceName, Result, Version) ->
+    case Result of
        % If we detect a node went down, we should probably refresh the slot
         % mapping.
         {error, no_connection} ->
-            eredis_cluster_monitor:refresh_mapping(Version),
+            eredis_cluster_monitor:refresh_mapping(InstanceName, Version),
             retry;
 
         % If the tcp connection is closed (connection timeout), the redis worker
@@ -207,14 +226,14 @@ handle_transaction_result(Result, Version) ->
         % Redis explicitly say our slot mapping is incorrect, we need to refresh
         % it
         {error, <<"MOVED ", _/binary>>} ->
-            eredis_cluster_monitor:refresh_mapping(Version),
+            eredis_cluster_monitor:refresh_mapping(InstanceName, Version),
             retry;
 
         Payload ->
             Payload
     end.
-handle_transaction_result(Result, Version, check_pipeline_result) ->
-    case handle_transaction_result(Result, Version) of
+handle_transaction_result(InstanceName, Result, Version, check_pipeline_result) ->
+    case handle_transaction_result(InstanceName, Result, Version) of
        retry -> retry;
        Payload when is_list(Payload) ->
            Pred = fun({error, <<"MOVED ", _/binary>>}) -> true;
@@ -223,7 +242,7 @@ handle_transaction_result(Result, Version, check_pipeline_result) ->
            case lists:any(Pred, Payload) of
                false -> Payload;
                true ->
-                   eredis_cluster_monitor:refresh_mapping(Version),
+                   eredis_cluster_monitor:refresh_mapping(InstanceName, Version),
                    retry
            end;
        Payload -> Payload
@@ -238,15 +257,15 @@ throttle_retries(_) -> timer:sleep(?REDIS_RETRY_DELAY).
 %% argument. The operation is done atomically
 %% @end
 %% =============================================================================
--spec update_key(Key::anystring(), UpdateFunction::fun((any()) -> any())) ->
+-spec update_key(instance_name(), Key::anystring(), UpdateFunction::fun((any()) -> any())) ->
     redis_transaction_result().
-update_key(Key, UpdateFunction) ->
+update_key(InstanceName, Key, UpdateFunction) ->
     UpdateFunction2 = fun(GetResult) ->
         {ok, Var} = GetResult,
         UpdatedVar = UpdateFunction(Var),
         {[["SET", Key, UpdatedVar]], UpdatedVar}
     end,
-    case optimistic_locking_transaction(Key, ["GET", Key], UpdateFunction2) of
+    case optimistic_locking_transaction(InstanceName, Key, ["GET", Key], UpdateFunction2) of
         {ok, {_, NewValue}} ->
             {ok, NewValue};
         Error ->
@@ -258,15 +277,15 @@ update_key(Key, UpdateFunction) ->
 %% passed in the argument. The operation is done atomically
 %% @end
 %% =============================================================================
--spec update_hash_field(Key::anystring(), Field::anystring(),
+-spec update_hash_field(instance_name(), Key::anystring(), Field::anystring(),
     UpdateFunction::fun((any()) -> any())) -> redis_transaction_result().
-update_hash_field(Key, Field, UpdateFunction) ->
+update_hash_field(InstanceName, Key, Field, UpdateFunction) ->
     UpdateFunction2 = fun(GetResult) ->
         {ok, Var} = GetResult,
         UpdatedVar = UpdateFunction(Var),
         {[["HSET", Key, Field, UpdatedVar]], UpdatedVar}
     end,
-    case optimistic_locking_transaction(Key, ["HGET", Key, Field], UpdateFunction2) of
+    case optimistic_locking_transaction(InstanceName, Key, ["HGET", Key, Field], UpdateFunction2) of
         {ok, {[FieldPresent], NewValue}} ->
             {ok, {FieldPresent, NewValue}};
         Error ->
@@ -278,10 +297,10 @@ update_hash_field(Key, Field, UpdateFunction) ->
 %% http://redis.io/topics/transactions
 %% @end
 %% =============================================================================
--spec optimistic_locking_transaction(Key::anystring(), redis_command(),
+-spec optimistic_locking_transaction(instance_name(), Key::anystring(), redis_command(),
     UpdateFunction::fun((redis_result()) -> redis_pipeline_command())) ->
         {redis_transaction_result(), any()}.
-optimistic_locking_transaction(WatchedKey, GetCommand, UpdateFunction) ->
+optimistic_locking_transaction(InstanceName, WatchedKey, GetCommand, UpdateFunction) ->
     Slot = get_key_slot(WatchedKey),
     Transaction = fun(Worker) ->
         %% Watch given key
@@ -298,7 +317,7 @@ optimistic_locking_transaction(WatchedKey, GetCommand, UpdateFunction) ->
         RedisResult = qw(Worker, [["MULTI"]] ++ UpdateCommand ++ [["EXEC"]]),
         {lists:last(RedisResult), Result}
     end,
-	case transaction(Transaction, Slot, {ok, undefined}, ?OL_TRANSACTION_TTL) of
+	case transaction(InstanceName, Transaction, Slot, {ok, undefined}, ?OL_TRANSACTION_TTL) of
         {{ok, undefined}, _} ->
             {error, resource_busy};
         {{ok, TransactionResult}, UpdateResult} ->
@@ -313,9 +332,9 @@ optimistic_locking_transaction(WatchedKey, GetCommand, UpdateFunction) ->
 %% try again.
 %% @end
 %% =============================================================================
--spec eval(bitstring(), bitstring(), [bitstring()], [bitstring()]) ->
+-spec eval(instance_name(), bitstring(), bitstring(), [bitstring()], [bitstring()]) ->
     redis_result().
-eval(Script, ScriptHash, Keys, Args) ->
+eval(InstanceName, Script, ScriptHash, Keys, Args) ->
     KeyNb = length(Keys),
     EvalShaCommand = ["EVALSHA", ScriptHash, KeyNb] ++ Keys ++ Args,
     Key = if
@@ -323,10 +342,10 @@ eval(Script, ScriptHash, Keys, Args) ->
         true -> hd(Keys)
     end,
 
-    case qk(EvalShaCommand, Key) of
+    case qk(InstanceName, EvalShaCommand, Key) of
         {error, <<"NOSCRIPT", _/binary>>} ->
             LoadCommand = ["SCRIPT", "LOAD", Script],
-            [_, Result] = qk([LoadCommand, EvalShaCommand], Key),
+            [_, Result] = qk(InstanceName, [LoadCommand, EvalShaCommand], Key),
             Result;
         Result ->
             Result
@@ -336,9 +355,9 @@ eval(Script, ScriptHash, Keys, Args) ->
 %% @doc Perform a given query on all node of a redis cluster
 %% @end
 %% =============================================================================
--spec qa(redis_command()) -> ok | {error, Reason::bitstring()}.
-qa(Command) ->
-    Pools = eredis_cluster_monitor:get_all_pools(),
+-spec qa(instance_name(), redis_command()) -> ok | {error, Reason::bitstring()}.
+qa(InstanceName, Command) ->
+    Pools = eredis_cluster_monitor:get_all_pools(InstanceName),
     Transaction = fun(Worker) -> qw(Worker, Command) end,
     [eredis_cluster_pool:transaction(Pool, Transaction) || Pool <- Pools].
 
@@ -347,17 +366,21 @@ qa(Command) ->
 %% function passed to the transaction/2 method
 %% @end
 %% =============================================================================
--spec qw(Worker::pid(), redis_command()) -> redis_result().
-qw(Worker, Command) ->
-    eredis_cluster_pool_worker:query(Worker, Command).
+%%-spec qw(Worker::pid(), redis_command()) -> redis_result().
+%%qw(Worker, Command) ->
+%%    eredis_cluster_pool_worker:query(Worker, Command).
+
+-spec qw(instance_name(), redis_command()) -> redis_result().
+qw(InstanceName, Command) ->
+    eredis_cluster_pool_worker:query(InstanceName, Command).
 
 %% =============================================================================
 %% @doc Perform flushdb command on each node of the redis cluster
 %% @end
 %% =============================================================================
--spec flushdb() -> ok | {error, Reason::bitstring()}.
-flushdb() ->
-    Result = qa(["FLUSHDB"]),
+-spec flushdb(instance_name()) -> ok | {error, Reason::bitstring()}.
+flushdb(InstanceName) ->
+    Result = qa(InstanceName, ["FLUSHDB"]),
     case proplists:lookup(error,Result) of
         none ->
             ok;

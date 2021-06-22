@@ -11,3 +11,6 @@ rel/example_project
 _build/
 priv/
 doc/
+.idea/
+out/
+eredis_cluster.iml

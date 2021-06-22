@@ -2,7 +2,8 @@
 -behaviour(supervisor).
 
 %% API.
--export([create/2]).
+%%-export([create/2]).
+-export([create/6, create/7]).
 -export([stop/1]).
 -export([transaction/2]).
 
@@ -11,34 +12,60 @@
 -export([init/1]).
 
 -include("eredis_cluster.hrl").
+%%
+%%-spec create(Host::string(), Port::integer()) ->
+%%    {ok, PoolName::atom()} | {error, PoolName::atom()}.
+%%create(Host, Port) ->
+%%	PoolName = get_name(Host, Port),
+%%
+%%    case whereis(PoolName) of
+%%        undefined ->
+%%            DataBase = application:get_env(eredis_cluster, database, 0),
+%%            Password = application:get_env(eredis_cluster, password, ""),
+%%            WorkerArgs = [{host, Host},
+%%                          {port, Port},
+%%                          {database, DataBase},
+%%                          {password, Password}
+%%                         ],
+%%
+%%        	Size = application:get_env(eredis_cluster, pool_size, 10),
+%%        	MaxOverflow = application:get_env(eredis_cluster, pool_max_overflow, 0),
+%%
+%%            PoolArgs = [{name, {local, PoolName}},
+%%                        {worker_module, eredis_cluster_pool_worker},
+%%                        {size, Size},
+%%                        {max_overflow, MaxOverflow}],
+%%
+%%            ChildSpec = poolboy:child_spec(PoolName, PoolArgs, WorkerArgs),
+%%
+%%            {Result, _} = supervisor:start_child(?MODULE,ChildSpec),
+%%        	{Result, PoolName};
+%%        _ ->
+%%            {ok, PoolName}
+%%    end.
 
--spec create(Host::string(), Port::integer()) ->
-    {ok, PoolName::atom()} | {error, PoolName::atom()}.
-create(Host, Port) ->
-	PoolName = get_name(Host, Port),
 
+create(Host, Port, DataBase, Password, Size, MaxOverflow) ->
+    create(Host, Port, DataBase, Password, Size, MaxOverflow, []).
+create(Host, Port, DataBase, Password, Size, MaxOverflow, Options) ->
+    PoolName = get_name(Host, Port),
     case whereis(PoolName) of
         undefined ->
-            DataBase = application:get_env(eredis_cluster, database, 0),
-            Password = application:get_env(eredis_cluster, password, ""),
             WorkerArgs = [{host, Host},
-                          {port, Port},
-                          {database, DataBase},
-                          {password, Password}
-                         ],
-
-        	Size = application:get_env(eredis_cluster, pool_size, 10),
-        	MaxOverflow = application:get_env(eredis_cluster, pool_max_overflow, 0),
-
+                {port, Port},
+                {database, DataBase},
+                {password, Password}],
             PoolArgs = [{name, {local, PoolName}},
-                        {worker_module, eredis_cluster_pool_worker},
-                        {size, Size},
-                        {max_overflow, MaxOverflow}],
-
-            ChildSpec = poolboy:child_spec(PoolName, PoolArgs, WorkerArgs),
-
+                {worker_module, eredis_cluster_pool_worker},
+                {size, Size},
+                {max_overflow, MaxOverflow}],
+            ChildSpec = poolboy:child_spec(PoolName, PoolArgs,
+                case Options of
+                    [] -> WorkerArgs;
+                    _ -> WorkerArgs ++ [{options, Options}]
+                end),
             {Result, _} = supervisor:start_child(?MODULE,ChildSpec),
-        	{Result, PoolName};
+            {Result, PoolName};
         _ ->
             {ok, PoolName}
     end.
@@ -60,8 +87,19 @@ stop(PoolName) ->
     ok.
 
 -spec get_name(Host::string(), Port::integer()) -> PoolName::atom().
-get_name(Host, Port) ->
-    list_to_atom(Host ++ "#" ++ integer_to_list(Port)).
+
+get_name(Host, Port) when is_list(Host) andalso is_list(Port)  ->
+    Name1 = Host ++ "#" ++ Port,
+    case catch(erlang:list_to_existing_atom(Name1)) of
+        {'EXIT', _} -> erlang:list_to_atom(Name1);
+        Atom when is_atom(Atom) -> Atom
+    end;
+get_name(Host, Port) when is_list(Host) andalso is_integer(Port) ->
+    get_name(Host, erlang:integer_to_list(Port));
+get_name(Host, Port) when is_list(Port)  ->
+    get_name(erlang:atom_to_list(Host), Port).
+%%get_name(Host, Port)  ->
+%%    get_name(erlang:atom_to_list(Host), erlang:integer_to_list(Port)).
 
 -spec start_link() -> {ok, pid()}.
 start_link() ->
@@ -70,4 +108,6 @@ start_link() ->
 -spec init([])
 	-> {ok, {{supervisor:strategy(), 1, 5}, [supervisor:child_spec()]}}.
 init([]) ->
+    ets:new(?INSTANCES, [public, set, named_table, {read_concurrency, true}]),
+    ets:new(?SLOTS, [public, set, named_table, {read_concurrency, true}]),
 	{ok, {{one_for_one, 1, 5}, []}}.
