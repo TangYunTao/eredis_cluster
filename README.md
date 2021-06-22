@@ -26,7 +26,7 @@ your app.config):
 
     {eredis_cluster,
         [
-            {app_config,
+            {config,
                 [
                     {init_nodes,[
                         {"127.0.0.1", 30001},
@@ -39,7 +39,7 @@ your app.config):
                     {password, "123456"}
                 ]
             },
-            {app_session,
+            {session,
                 [
                     {init_nodes,[
                         {"127.0.0.2", 30001},
@@ -54,7 +54,7 @@ your app.config):
             }
         ]
 
-    },
+    }
 
 You don't need to specify all nodes of your configuration as eredis_cluster will
 retrieve them through the command `CLUSTER SLOTS` at runtime.
