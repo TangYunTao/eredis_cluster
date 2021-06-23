@@ -44,7 +44,7 @@ start_instances() ->
     eredis_cluster:start(),
     Instances =
         [
-            {app_config,
+            {?InstanceName1,
                 [
                     {init_nodes, [
                         {"127.0.0.1", 30001},
@@ -59,7 +59,7 @@ start_instances() ->
                     % , {tls, [{cacertfile, "ca.crt"}]}
                 ]
             },
-            {app_session,
+            {?InstanceName2,
                 [
                     {init_nodes, [
                         {"127.0.0.2", 30001},
