@@ -41,6 +41,9 @@ init(Args) ->
 query(Worker, Commands) ->
     gen_server:call(Worker, {'query', Commands}).
 
+%%query(_InstanceName, Worker, Commands) ->
+%%    gen_server:call(Worker, {'query', Commands}).
+
 is_connected(Pid) ->
     gen_server:call(Pid, is_connected).
 

@@ -125,6 +125,7 @@ qmn2(InstanceName, [{Pool, PoolCommands} | T1], [{Pool, Mapping} | T2], Acc, Ver
     Result = eredis_cluster_pool:transaction(Pool, Transaction),
     case handle_transaction_result(InstanceName, Result, Version, check_pipeline_result) of
         retry -> retry;
+        ok ->  qmn2(InstanceName, T1, T2,  [ok | Acc], Version);
         Res ->
             MappedRes = lists:zip(Mapping,Res),
             qmn2(InstanceName, T1, T2, MappedRes ++ Acc, Version)
@@ -139,12 +140,12 @@ qmn2(_, [], [], Acc, _) ->
 
 split_by_pools(InstanceName, Commands) ->
     State = eredis_cluster_monitor:get_state(InstanceName),
-    split_by_pools(Commands, 1, [], [], State).
+    split_by_pools(Commands, InstanceName, 1, [], [], State).
 
-split_by_pools([Command | T], Index, CmdAcc, MapAcc, State) ->
+split_by_pools([Command | T], InstanceName, Index, CmdAcc, MapAcc, State) ->
     Key = get_key_from_command(Command),
     Slot = get_key_slot(Key),
-    {Pool, _Version} = eredis_cluster_monitor:get_pool_by_slot(Slot, State),
+    {Pool, _Version} = eredis_cluster_monitor:get_pool_by_slot(InstanceName, Slot, State),
     {NewAcc1, NewAcc2} =
         case lists:keyfind(Pool, 1, CmdAcc) of
             false ->
@@ -157,8 +158,8 @@ split_by_pools([Command | T], Index, CmdAcc, MapAcc, State) ->
                 MapAcc2  = lists:keydelete(Pool, 1, MapAcc),
                 {[{Pool, CmdList2} | CmdAcc2], [{Pool, MapList2} | MapAcc2]}
         end,
-    split_by_pools(T, Index+1, NewAcc1, NewAcc2, State);
-split_by_pools([], _Index, CmdAcc, MapAcc, State) ->
+    split_by_pools(T, InstanceName, Index+1, NewAcc1, NewAcc2, State);
+split_by_pools([], _InstanceName, _Index, CmdAcc, MapAcc, State) ->
     CmdAcc2 = [{Pool, lists:reverse(Commands)} || {Pool, Commands} <- CmdAcc],
     MapAcc2 = [{Pool, lists:reverse(Mapping)} || {Pool, Mapping} <- MapAcc],
     {CmdAcc2, MapAcc2, eredis_cluster_monitor:get_state_version(State)}.
@@ -257,9 +258,9 @@ throttle_retries(_) -> timer:sleep(?REDIS_RETRY_DELAY).
 %% argument. The operation is done atomically
 %% @end
 %% =============================================================================
--spec update_key(instance_name(), Key::anystring(), UpdateFunction::fun((any()) -> any())) ->
+-spec update_key( Key::anystring(), instance_name(), UpdateFunction::fun((any()) -> any())) ->
     redis_transaction_result().
-update_key(InstanceName, Key, UpdateFunction) ->
+update_key(Key, InstanceName, UpdateFunction) ->
     UpdateFunction2 = fun(GetResult) ->
         {ok, Var} = GetResult,
         UpdatedVar = UpdateFunction(Var),
@@ -277,9 +278,9 @@ update_key(InstanceName, Key, UpdateFunction) ->
 %% passed in the argument. The operation is done atomically
 %% @end
 %% =============================================================================
--spec update_hash_field(instance_name(), Key::anystring(), Field::anystring(),
+-spec update_hash_field(Key::anystring(), instance_name(), Field::anystring(),
     UpdateFunction::fun((any()) -> any())) -> redis_transaction_result().
-update_hash_field(InstanceName, Key, Field, UpdateFunction) ->
+update_hash_field(Key, InstanceName, Field, UpdateFunction) ->
     UpdateFunction2 = fun(GetResult) ->
         {ok, Var} = GetResult,
         UpdatedVar = UpdateFunction(Var),
@@ -366,13 +367,14 @@ qa(InstanceName, Command) ->
 %% function passed to the transaction/2 method
 %% @end
 %% =============================================================================
-%%-spec qw(Worker::pid(), redis_command()) -> redis_result().
-%%qw(Worker, Command) ->
-%%    eredis_cluster_pool_worker:query(Worker, Command).
+-spec qw(Worker::pid(), redis_command()) -> redis_result().
+qw(Worker, Command) ->
+    eredis_cluster_pool_worker:query(Worker, Command).
 
--spec qw(instance_name(), redis_command()) -> redis_result().
-qw(InstanceName, Command) ->
-    eredis_cluster_pool_worker:query(InstanceName, Command).
+%%-spec qw(instance_name(), Worker::pid(), redis_command()) -> redis_result().
+%%qw(InstanceName, Worker, Command) ->
+%%    io:format("worker 2 ====>> ~p~n", [Worker]),
+%%    eredis_cluster_pool_worker:query(InstanceName, Worker, Command).
 
 %% =============================================================================
 %% @doc Perform flushdb command on each node of the redis cluster

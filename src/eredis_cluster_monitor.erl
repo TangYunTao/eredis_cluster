@@ -6,7 +6,7 @@
 -export([connect/2]).
 -export([refresh_mapping/2]).
 -export([get_state/1, get_state_version/1]).
--export([get_pool_by_slot/3, get_pool_by_slot/2]).
+-export([get_pool_by_slot/2, get_pool_by_slot/3]).
 -export([get_all_instances_pools/0, get_all_pools/1]).
 
 %% gen_server.
@@ -60,8 +60,9 @@ get_all_state() ->
 -spec get_state(PoolName::atom()) -> #state{}.
 get_state(InstanceName) ->
     case ets:lookup(?INSTANCES, InstanceName) of
-        undefined -> #state{};
-        [{_PoolName, State}] -> State
+        [{_PoolName, State}] -> State;
+        _ -> #state{}
+%%        undefined -> #state{};
     end.
 
 get_state_version(State) ->
@@ -87,6 +88,13 @@ get_all_instances_pools() ->
 %% to prevent from querying ets inside loops.
 %% @end
 %% =============================================================================
+
+-spec get_pool_by_slot(PoolName::atom(), Slot::integer()) ->
+    {PoolName::atom() | undefined, Version::integer()}.
+get_pool_by_slot(InstanceName, Slot) ->
+    State = get_state(InstanceName),
+    get_pool_by_slot(InstanceName, Slot, State).
+
 -spec get_pool_by_slot(PoolName::atom(), Slot::integer(), State::#state{}) ->
     {PoolName::atom() | undefined, Version::integer()}.
 get_pool_by_slot(InstanceName, Slot, State) when is_integer(Slot) ->
@@ -98,12 +106,8 @@ get_pool_by_slot(InstanceName, Slot, State) when is_integer(Slot) ->
         true ->
             {undefined, State#state.version}
     end.
+%%
 
--spec get_pool_by_slot(PoolName::atom(), Slot::integer()) ->
-    {PoolName::atom() | undefined, Version::integer()}.
-get_pool_by_slot(InstanceName, Slot) ->
-    State = get_state(InstanceName),
-    get_pool_by_slot(InstanceName, Slot, State).
 
 -spec reload_slots_map(State::#state{}) -> NewState::#state{}.
 reload_slots_map(State = #state{instance_name = InstanceName}) ->
