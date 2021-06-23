@@ -16,7 +16,7 @@ resharding, recovering...
 The directory contains a Makefile and rebar3
 
 	make
-	make test
+	rebar3 ct
 
 ## Configuration
 
