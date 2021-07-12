@@ -65,6 +65,16 @@ retrieve them through the command `CLUSTER SLOTS` at runtime.
 %% Start the application
 eredis_cluster:start().
 
+%% Start multi clusters instance
+{ok, ERedisClusters} = application:get_env(YourApplication, eredis_cluster),
+
+pool_spec(ERedisClusters) ->
+  [pool_spec(Instance, Options) || {Instance, Options} <- ERedisClusters].
+  
+pool_spec(Instance, Options) ->
+  {ok, _}= eredis_cluster:start_instance(Instance, Options).
+  
+
 %% Simple command
 eredis_cluster:q(InstanceName, ["GET","abc"]).
 
