@@ -204,14 +204,16 @@ close_connection(SlotsMap) ->
 connect_node(Node = #node{address = Host, port = Port}, #state{database = DataBase,
     password = Password,
     size = Size,
-    max_overflow = MaxOverflow}) ->
+    max_overflow = MaxOverflow,
+    reconnect_interval = ReConnectInterVal
+    }) ->
 
     Options = case erlang:get(options) of
                   undefined -> [];
                   Options0 -> Options0
               end,
 
-    case eredis_cluster_pool:create(Host, Port, DataBase, Password, Size, MaxOverflow, Options) of
+    case eredis_cluster_pool:create(Host, Port, DataBase, Password, Size, MaxOverflow, ReConnectInterVal, Options) of
         {ok, Pool} ->
             Node#node{pool = Pool};
         _ ->

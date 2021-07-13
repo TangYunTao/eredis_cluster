@@ -3,7 +3,7 @@
 
 %% API.
 %%-export([create/2]).
--export([create/6, create/7]).
+-export([create/7, create/8]).
 -export([stop/1]).
 -export([transaction/2]).
 
@@ -13,9 +13,9 @@
 
 -include("eredis_cluster.hrl").
 
-create(Host, Port, DataBase, Password, Size, MaxOverflow) ->
-    create(Host, Port, DataBase, Password, Size, MaxOverflow, []).
-create(Host, Port, DataBase, Password, Size, MaxOverflow, Options) ->
+create(Host, Port, DataBase, Password, Size, MaxOverflow, ReconnectInterVal) ->
+    create(Host, Port, DataBase, Password, Size, MaxOverflow, ReconnectInterVal, []).
+create(Host, Port, DataBase, Password, Size, MaxOverflow, ReconnectInterVal, Options) ->
     PoolName = get_name(Host, Port),
     case whereis(PoolName) of
         undefined ->
@@ -26,7 +26,8 @@ create(Host, Port, DataBase, Password, Size, MaxOverflow, Options) ->
             PoolArgs = [{name, {local, PoolName}},
                 {worker_module, eredis_cluster_pool_worker},
                 {size, Size},
-                {max_overflow, MaxOverflow}],
+                {max_overflow, MaxOverflow},
+                {reconnect_interval, ReconnectInterVal}],
             ChildSpec = poolboy:child_spec(PoolName, PoolArgs,
                 case Options of
                     [] -> WorkerArgs;
