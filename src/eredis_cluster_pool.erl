@@ -22,12 +22,12 @@ create(Host, Port, DataBase, Password, Size, MaxOverflow, ReconnectInterVal, Opt
             WorkerArgs = [{host, Host},
                 {port, Port},
                 {database, DataBase},
-                {password, Password}],
+                {password, Password},
+                {reconnect_interval, ReconnectInterVal}],
             PoolArgs = [{name, {local, PoolName}},
                 {worker_module, eredis_cluster_pool_worker},
                 {size, Size},
-                {max_overflow, MaxOverflow},
-                {reconnect_interval, ReconnectInterVal}],
+                {max_overflow, MaxOverflow}],
             ChildSpec = poolboy:child_spec(PoolName, PoolArgs,
                 case Options of
                     [] -> WorkerArgs;
