@@ -269,7 +269,7 @@ connect_(InstanceName, Opts) ->
         password = proplists:get_value(password, Opts, ""),
         size     = proplists:get_value(pool_size, Opts, 10),
         max_overflow = proplists:get_value(pool_max_overflow, Opts, 0),
-        reconnect_interval = proplists:get_value(pool_max_overflow, Opts, no_reconnect)
+        reconnect_interval = proplists:get_value(reconnect_interval, Opts, no_reconnect)
     },
     reload_slots_map(State).
 
