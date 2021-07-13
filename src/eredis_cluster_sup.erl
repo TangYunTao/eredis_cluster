@@ -17,7 +17,9 @@
 %% Supervisor callbacks
 -export([init/1]).
 
--export([start_cluster_monitor_child/2, stop_cluster_monitor_child/1]).
+%%-export([start_cluster_monitor_child/2, stop_cluster_monitor_child/1]).
+
+-export([stop_cluster_monitor_child/1]).
 
 -define(SERVER, ?MODULE).
 
@@ -60,14 +62,14 @@ init([]) ->
     {ok, {SupFlags, [ChildSpec]}}.
 
 
-start_cluster_monitor_child(InstanceName, Params) ->
-    ChildSpec = #{id => name(InstanceName),
-        start => {eredis_cluster_monitor, start_link, [InstanceName, Params]},
-        restart => permanent,
-        shutdown => 5000,
-        type => worker,
-        modules => [eredis_cluster_monitor]},
-    supervisor:start_child(?MODULE, ChildSpec).
+%%start_cluster_monitor_child(InstanceName, Params) ->
+%%    ChildSpec = #{id => name(InstanceName),
+%%        start => {eredis_cluster_monitor, start_link, [InstanceName, Params]},
+%%        restart => permanent,
+%%        shutdown => 5000,
+%%        type => worker,
+%%        modules => [eredis_cluster_monitor]},
+%%    supervisor:start_child(?MODULE, ChildSpec).
 
 stop_cluster_monitor_child(InstanceName) ->
     case supervisor:terminate_child(?MODULE, name(InstanceName)) of

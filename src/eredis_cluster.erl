@@ -1,7 +1,7 @@
 -module(eredis_cluster).
 -behaviour(application).
 
--export([start_instance/2, stop_instance/1]).
+%%-export([start_instance/2, stop_instance/1]).
 
 %% Application
 -export([start/2]).
@@ -48,14 +48,14 @@ stop(_State) ->
 %%    {ok, pid()}.
 
 %%  start | stop instance server
--spec start_instance(InstanceName::atom(), StartArgs::term()) ->
-    {ok, pid()}.
-start_instance(InstanceName, Opts) ->
-    eredis_cluster_sup:start_cluster_monitor_child(InstanceName, Opts).
+%%-spec start_instance(InstanceName::atom(), StartArgs::term()) ->
+%%    {ok, pid()}.
+%%start_instance(InstanceName, Opts) ->
+%%    eredis_cluster_sup:start_cluster_monitor_child(InstanceName, Opts).
 
--spec stop_instance(InstanceName::atom()) -> ok.
-stop_instance(InstanceName) ->
-    eredis_cluster_sup:stop_cluster_monitor_child(InstanceName).
+%%-spec stop_instance(InstanceName::atom()) -> ok.
+%%stop_instance(InstanceName) ->
+%%    eredis_cluster_sup:stop_cluster_monitor_child(InstanceName).
 
 
 %% =============================================================================
@@ -373,7 +373,6 @@ qw(Worker, Command) ->
 
 %%-spec qw(instance_name(), Worker::pid(), redis_command()) -> redis_result().
 %%qw(InstanceName, Worker, Command) ->
-%%    io:format("worker 2 ====>> ~p~n", [Worker]),
 %%    eredis_cluster_pool_worker:query(InstanceName, Worker, Command).
 
 %% =============================================================================

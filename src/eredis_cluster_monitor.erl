@@ -28,7 +28,8 @@
     database = 0 :: integer(),
     password = "" :: string(),
     size     = 10 :: integer(),
-    max_overflow = 0 :: integer()
+    max_overflow = 0 :: integer(),
+    reconnect_interval = no_reconnect :: integer() | no_reconnect
 }).
 
 %% API.
@@ -218,14 +219,15 @@ connect_node(Node = #node{address = Host, port = Port}, #state{database = DataBa
     end.
 
 safe_eredis_start_link(#node{address = Host, port = Port},
-    #state{database = DataBase, password = Password}) ->
+    #state{database = DataBase, password = Password, reconnect_interval = InterVal}) ->
 %%    Options = case erlang:get(options) of
 %%                  undefined -> [];
 %%                  Options0 -> Options0
 %%              end,
 %%    Payload = eredis:start_link(Host, Port, DataBase, Password, no_reconnect, 5000, Options),
-    Payload = eredis:start_link(Host, Port, DataBase, Password, no_reconnect, 5000),
-%%    process_flag(trap_exit, true),
+    process_flag(trap_exit, true),
+    Payload = eredis:start_link(Host, Port, DataBase, Password, InterVal, 5000),
+    process_flag(trap_exit, false),
     Payload.
 
 -spec create_slots_cache(InstanceName::atom(), [#slots_map{}]) -> [integer()].
@@ -273,7 +275,7 @@ connect_(InstanceName, Opts) ->
 %% gen_server.
 
 init([{InstanceName, Opts}]) ->
-    process_flag(trap_exit, true),
+%%    process_flag(trap_exit, true),
     {ok, connect_(InstanceName, Opts)}.
 
 handle_call({reload_slots_map,Version}, _From, #state{version=Version} = State) ->

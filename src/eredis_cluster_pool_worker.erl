@@ -16,7 +16,7 @@
 
 -include("eredis_cluster.hrl").
 
--record(state, {conn, host, port, database, password}).
+-record(state, {conn, host, port, database, password, reconnect_interval}).
 
 start_link(Args) ->
     gen_server:start_link(?MODULE, Args, []).
@@ -26,10 +26,11 @@ init(Args) ->
     Port = proplists:get_value(port, Args),
     DataBase = proplists:get_value(database, Args, 0),
     Password = proplists:get_value(password, Args, ""),
+    ReConnectInterVal = proplists:get_value(reconnect_interval, Args, no_reconnect),
     Options = proplists:get_value(options, Args, []),
     erlang:put(options, Options),
     process_flag(trap_exit, true),
-    Conn = start_connection(Hostname, Port, DataBase, Password, Options),
+    Conn = start_connection(Hostname, Port, DataBase, Password, ReConnectInterVal, Options),
     process_flag(trap_exit, false),
 
     {ok, #state{conn = Conn,
@@ -62,17 +63,16 @@ handle_call(_Request, _From, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-
-
 handle_info(reconnect, #state{host = Hostname,
     port = Port,
     database = DataBase,
-    password = Password} = State) ->
+    password = Password,
+    reconnect_interval = InterVal} = State) ->
     Options = case erlang:get(options) of
                   undefined -> [];
                   Options0 -> Options0
               end,
-    Conn = start_connection(Hostname, Port, DataBase, Password, Options),
+    Conn = start_connection(Hostname, Port, DataBase, Password, InterVal, Options),
     {noreply, State#state{conn = Conn}};
 
 handle_info({'EXIT', Pid, _Reason}, #state{conn = Pid} = State) ->
@@ -92,8 +92,8 @@ code_change(_, State, _Extra) ->
     {ok, State}.
 
 %% TODO
-start_connection(Hostname, Port, DataBase, Password, _Options) ->
-    case eredis:start_link(Hostname, Port, DataBase, Password, no_reconnect, 5000) of
+start_connection(Hostname, Port, DataBase, Password,  ReInterVal, _Options) ->
+    case eredis:start_link(Hostname, Port, DataBase, Password, ReInterVal, 5000) of
 %%    case eredis:start_link(Hostname, Port, DataBase, Password, no_reconnect, 5000, Options) of
         {ok,Connection} ->
             Connection;
