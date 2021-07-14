@@ -36,7 +36,9 @@ your app.config):
                     {pool_size, 2},
                     {database, 0},
                     {pool_max_overflow, 2},
-                    {password, "123456"}
+                    {password, "123456"},
+		    % reconnect redis nods  interval 100 ms
+		    {reconnect_interval, 100}
                 ]
             },
             {InstanceName2,
@@ -49,7 +51,9 @@ your app.config):
                     {pool_size, 2},
                     {database, 0},
                     {pool_max_overflow, 2},
-                    {password, "123456"}
+                    {password, "123456"},
+		    % reconnect redis nods  interval 100 ms
+		    {reconnect_interval, 100}
                 ]
             }
         ]
@@ -66,13 +70,48 @@ retrieve them through the command `CLUSTER SLOTS` at runtime.
 eredis_cluster:start().
 
 %% Start multi clusters instance
-{ok, ERedisClusters} = application:get_env(YourApplication, eredis_cluster),
+
+-module(redis_sup).
+-author("tangyuntao").
+-behaviour(supervisor).
+
+-include("logger.hrl").
+
+-export([start_link/0]).
+
+-export([init/1]).
+
+start_link() ->
+  supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+
+init([]) ->
+  {ok, ERedisClusters} = application:get_env(YourAppName, eredis_cluster),
+  {ok, {{one_for_one, 10, 100}, pool_spec(ERedisClusters)}}.
+
+pool_spec([]) ->
+  ?ERROR_MSG("redis is not configured", []);
 
 pool_spec(ERedisClusters) ->
-  [pool_spec(Instance, Options) || {Instance, Options} <- ERedisClusters].
-  
-pool_spec(Instance, Options) ->
-  {ok, _}= eredis_cluster:start_instance(Instance, Options).
+  SpecList = [pool_spec(Instance, Options) || {Instance, Options} <- ERedisClusters],
+  SpecList.
+
+pool_spec(InstanceName, Params) ->
+  #{id => name(InstanceName),
+    start => {eredis_cluster_monitor, start_link, [InstanceName, Params]},
+    restart => permanent,
+    shutdown => 5000,
+    type => worker,
+    modules => [eredis_cluster_monitor]
+    }.
+
+name(Name) when is_list(Name) ->
+  Name1 = Name ++ "_eredis_cluster_monitor",
+  case catch(erlang:list_to_existing_atom(Name1)) of
+    {'EXIT', _} -> erlang:list_to_atom(Name1);
+    Atom when is_atom(Atom) -> Atom
+  end;
+name(Name) when is_atom(Name) ->
+  name(atom_to_list(Name)).
   
 
 %% Simple command
